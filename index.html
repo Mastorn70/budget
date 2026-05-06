@@ -232,6 +232,7 @@
     .empty-state { text-align: center; padding: 60px 20px; color: var(--text2); }
     .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
     .empty-state p { font-size: 15px; }
+    #tx-cards-mobile { display: none; }
     .amount-income  { color: var(--success); font-weight: 600; }
     .amount-expense { color: var(--danger);  font-weight: 600; }
     .chart-container { position: relative; height: 280px; overflow: hidden; }
@@ -630,7 +631,7 @@
           </tbody>
         </table>
         <!-- Mobile card list -->
-        <div id="tx-cards-mobile" style="display:none"></div>
+        <div id="tx-cards-mobile"></div>
       </div>
     </div>
   </section>
@@ -1190,28 +1191,30 @@ function deleteTransaction(id) {
 
 // ── Render transactions ──────────────────────────────────────
 function renderTransactions() {
-  const ymSel  = document.getElementById('filter-month');
+  const ymSel   = document.getElementById('filter-month');
   const typeSel = document.getElementById('filter-type');
-  const catSel = document.getElementById('filter-category');
-  const search = document.getElementById('filter-search').value.toLowerCase();
+  const catSel  = document.getElementById('filter-category');
+  const search  = document.getElementById('filter-search').value.toLowerCase();
 
-  const savedYM  = ymSel.value;
-  const savedCat = catSel.value;
+  // read values BEFORE rebuilding options
+  const savedYM   = ymSel.value;
+  const savedType = typeSel.value;
+  const savedCat  = catSel.value;
 
-  // rebuild month options
+  // rebuild month options, restoring selection
   const months = availableMonths();
   ymSel.innerHTML = '<option value="">Tutti i mesi</option>' +
     months.map(m=>`<option value="${m}"${m===savedYM?' selected':''}>${ymLabel(m,true)}</option>`).join('');
 
-  // rebuild category options
+  // rebuild category options, restoring selection
   catSel.innerHTML = '<option value="">Tutte le categorie</option>' +
     getAllCategories().map(c=>`<option value="${c.id}"${c.id===savedCat?' selected':''}>${escHtml(c.label)}</option>`).join('');
 
   let txs = DB.transactions;
-  if (ymSel.value)   txs = txs.filter(t => t.date.startsWith(ymSel.value));
-  if (typeSel.value) txs = txs.filter(t => t.type === typeSel.value);
-  if (catSel.value)  txs = txs.filter(t => t.category === catSel.value);
-  if (search)        txs = txs.filter(t => t.description.toLowerCase().includes(search));
+  if (savedYM)   txs = txs.filter(t => t.date.startsWith(savedYM));
+  if (savedType) txs = txs.filter(t => t.type === savedType);
+  if (savedCat)  txs = txs.filter(t => t.category === savedCat);
+  if (search)    txs = txs.filter(t => t.description.toLowerCase().includes(search));
 
   const tbody   = document.getElementById('transactions-body');
   const mobileEl = document.getElementById('tx-cards-mobile');
