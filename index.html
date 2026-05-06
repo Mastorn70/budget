@@ -248,6 +248,8 @@
 
     .delete-btn { background: none; border: none; color: var(--text2); cursor: pointer; padding: 4px 8px; border-radius: 6px; font-size: 16px; transition: all 0.2s; }
     .delete-btn:hover { background: rgba(239,68,68,.15); color: var(--danger); }
+    .edit-btn { background: none; border: none; color: var(--text2); cursor: pointer; padding: 4px 8px; border-radius: 6px; font-size: 16px; transition: all 0.2s; }
+    .edit-btn:hover { background: rgba(99,102,241,.15); color: var(--primary-light); }
 
     /* ── Toast ── */
     .toast {
@@ -701,9 +703,10 @@
 <div class="modal-overlay" id="modal-transaction">
   <div class="modal">
     <div class="modal-header">
-      <h3 class="modal-title">Aggiungi transazione</h3>
+      <h3 class="modal-title" id="modal-tx-title">Aggiungi transazione</h3>
       <button class="modal-close" onclick="closeModal('modal-transaction')">✕</button>
     </div>
+    <input type="hidden" id="tx-edit-id" value="">
 
     <div class="form-group">
       <div class="toggle-group">
@@ -742,7 +745,7 @@
 
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
       <button class="btn btn-ghost" onclick="closeModal('modal-transaction')">Annulla</button>
-      <button class="btn btn-primary" onclick="addTransaction()">Aggiungi</button>
+      <button class="btn btn-primary" id="btn-save-tx" onclick="saveTransaction()">Aggiungi</button>
     </div>
   </div>
 </div>
@@ -1030,6 +1033,9 @@ function navigate(page) {
 // ── Modals ───────────────────────────────────────────────────
 function openModal(id) {
   if (id === 'modal-transaction') {
+    document.getElementById('tx-edit-id').value = '';
+    document.getElementById('modal-tx-title').textContent = 'Aggiungi transazione';
+    document.getElementById('btn-save-tx').textContent = 'Aggiungi';
     document.getElementById('tx-date').value = new Date().toISOString().slice(0,10);
     document.getElementById('tx-amount').value = '';
     document.getElementById('tx-description').value = '';
@@ -1072,25 +1078,51 @@ function populateAccountSel() {
     `<option value="principale">Conto principale</option>`;
 }
 
-// ── Add transaction ──────────────────────────────────────────
-function addTransaction() {
-  const date  = document.getElementById('tx-date').value;
+// ── Add / Edit transaction ────────────────────────────────────
+function openEditTransaction(id) {
+  const t = DB.transactions.find(tx => tx.id === id);
+  if (!t) return;
+  document.getElementById('tx-edit-id').value = t.id;
+  document.getElementById('modal-tx-title').textContent = 'Modifica transazione';
+  document.getElementById('btn-save-tx').textContent = 'Salva modifiche';
+  document.getElementById('tx-date').value = t.date;
+  document.getElementById('tx-amount').value = t.amount;
+  document.getElementById('tx-description').value = t.description;
+  populateAccountSel();
+  setTransactionType(t.type);
+  document.getElementById('tx-category').value = t.category;
+  document.getElementById('modal-transaction').classList.add('open');
+}
+
+function saveTransaction() {
+  const editIdRaw = document.getElementById('tx-edit-id').value;
+  const date   = document.getElementById('tx-date').value;
   const amtRaw = parseFloat(document.getElementById('tx-amount').value);
-  const desc  = document.getElementById('tx-description').value.trim();
-  const cat   = document.getElementById('tx-category').value;
+  const desc   = document.getElementById('tx-description').value.trim();
+  const cat    = document.getElementById('tx-category').value;
 
   if (!date || isNaN(amtRaw) || amtRaw <= 0 || !desc) {
     toast('Compila tutti i campi obbligatori', true); return;
   }
   const amount = parseFloat(amtRaw.toFixed(2));
+  let txs = DB.transactions;
 
-  const txs = DB.transactions;
-  txs.push({ id: Date.now(), date, amount, description: desc, category: cat, type: txType });
+  if (editIdRaw) {
+    const editId = parseInt(editIdRaw, 10);
+    const idx = txs.findIndex(t => t.id === editId);
+    if (idx >= 0) {
+      txs[idx] = { ...txs[idx], date, amount, description: desc, category: cat, type: txType };
+    }
+    toast('Transazione modificata!');
+  } else {
+    txs.push({ id: Date.now(), date, amount, description: desc, category: cat, type: txType });
+    toast('Transazione aggiunta!');
+  }
+
   txs.sort((a,b) => b.date.localeCompare(a.date));
   DB.transactions = txs;
 
   closeModal('modal-transaction');
-  toast('Transazione aggiunta!');
   updateSidebarBalance();
   if (document.getElementById('page-dashboard').classList.contains('active'))    renderDashboard();
   if (document.getElementById('page-transactions').classList.contains('active')) renderTransactions();
@@ -1149,7 +1181,10 @@ function renderTransactions() {
       <td><span class="cat-badge">${escHtml(getCatLabel(t.category))}</span></td>
       <td><span class="badge badge-${t.type}">${t.type==='income'?'Entrata':'Uscita'}</span></td>
       <td class="amount-${t.type}">${t.type==='income'?'+':'-'}${fmt(t.amount)}</td>
-      <td><button class="delete-btn" onclick="deleteTransaction(${t.id})" title="Elimina">🗑</button></td>
+      <td style="white-space:nowrap">
+        <button class="edit-btn" onclick="openEditTransaction(${t.id})" title="Modifica">✏️</button>
+        <button class="delete-btn" onclick="deleteTransaction(${t.id})" title="Elimina">🗑</button>
+      </td>
     </tr>`).join('');
 
   // Mobile card list
@@ -1161,6 +1196,7 @@ function renderTransactions() {
       </div>
       <div class="tx-card-right">
         <span class="amount-${t.type}">${t.type==='income'?'+':'-'}${fmt(t.amount)}</span>
+        <button class="edit-btn" onclick="openEditTransaction(${t.id})" title="Modifica">✏️</button>
         <button class="delete-btn" onclick="deleteTransaction(${t.id})" title="Elimina">🗑</button>
       </div>
     </div>`).join('');
