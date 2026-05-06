@@ -250,6 +250,8 @@
     .delete-btn:hover { background: rgba(239,68,68,.15); color: var(--danger); }
     .edit-btn { background: none; border: none; color: var(--text2); cursor: pointer; padding: 4px 8px; border-radius: 6px; font-size: 16px; transition: all 0.2s; }
     .edit-btn:hover { background: rgba(99,102,241,.15); color: var(--primary-light); }
+    .stat-card-clickable { cursor: pointer; transition: border-color 0.2s, transform 0.15s; }
+    .stat-card-clickable:hover { border-color: var(--primary); transform: translateY(-2px); }
 
     /* ── Toast ── */
     .toast {
@@ -538,22 +540,22 @@
     </div>
 
     <div class="grid-4">
-      <div class="card">
+      <div class="card stat-card-clickable" onclick="openStatDetail('all')" title="Vedi tutte le transazioni">
         <div class="card-title">Saldo totale</div>
         <div class="stat-value" id="stat-balance">€0,00</div>
         <div class="stat-change">tutti i conti</div>
       </div>
-      <div class="card">
+      <div class="card stat-card-clickable" onclick="openStatDetail('income')" title="Vedi entrate del mese">
         <div class="card-title">Entrate mese</div>
         <div class="stat-value positive" id="stat-income">€0,00</div>
         <div class="stat-change">questo mese</div>
       </div>
-      <div class="card">
+      <div class="card stat-card-clickable" onclick="openStatDetail('expense')" title="Vedi uscite del mese">
         <div class="card-title">Uscite mese</div>
         <div class="stat-value negative" id="stat-expense">€0,00</div>
         <div class="stat-change">questo mese</div>
       </div>
-      <div class="card">
+      <div class="card stat-card-clickable" onclick="openStatDetail('net')" title="Vedi riepilogo mese">
         <div class="card-title">Risparmio netto</div>
         <div class="stat-value" id="stat-net">€0,00</div>
         <div class="stat-change">questo mese</div>
@@ -812,6 +814,52 @@
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
       <button class="btn btn-ghost" onclick="closeModal('modal-goal')">Annulla</button>
       <button class="btn btn-primary" onclick="addGoal()">Crea obiettivo</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Dettaglio stat card -->
+<div class="modal-overlay" id="modal-stat-detail">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-header">
+      <h3 class="modal-title" id="stat-detail-title">Dettaglio</h3>
+      <button class="modal-close" onclick="closeModal('modal-stat-detail')">✕</button>
+    </div>
+    <div id="stat-detail-summary" style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap"></div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Descrizione</th>
+            <th>Categoria</th>
+            <th>Tipo</th>
+            <th>Importo</th>
+          </tr>
+        </thead>
+        <tbody id="stat-detail-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Dettaglio stat card -->
+<div class="modal-overlay" id="modal-stat-detail">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-header">
+      <h3 class="modal-title" id="stat-detail-title">Dettaglio</h3>
+      <button class="modal-close" onclick="closeModal('modal-stat-detail')">✕</button>
+    </div>
+    <div id="stat-detail-summary" style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap"></div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th><th>Descrizione</th><th>Categoria</th><th>Tipo</th><th>Importo</th>
+          </tr>
+        </thead>
+        <tbody id="stat-detail-body"></tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -1532,6 +1580,91 @@ function updateSidebarBalance() {
   const tb = document.getElementById('mobile-topbar-balance');
   tb.textContent = text;
   tb.style.color = color;
+}
+
+// ── Stat detail modal ────────────────────────────────────────
+function openStatDetail(type) {
+  const cm = currentYM();
+  let txs, title, summaryHtml = '';
+
+  if (type === 'all') {
+    txs   = [...DB.transactions];
+    title = 'Tutte le transazioni';
+    const bal = totalBalance();
+    summaryHtml = `
+      <div class="card" style="padding:10px 16px;flex:1;min-width:120px">
+        <div class="card-title">Saldo totale</div>
+        <div class="stat-value ${bal>=0?'':'negative'}" style="font-size:18px">${bal>=0?'':'-'}${fmt(bal)}</div>
+      </div>
+      <div class="card" style="padding:10px 16px;flex:1;min-width:120px">
+        <div class="card-title">Transazioni</div>
+        <div class="stat-value" style="font-size:18px">${txs.length}</div>
+      </div>`;
+  } else if (type === 'income') {
+    txs   = monthTxs(cm).filter(t => t.type === 'income');
+    title = 'Entrate — ' + ymLabel(cm, true);
+    const tot = txs.reduce((a,t)=>a+t.amount,0);
+    summaryHtml = `
+      <div class="card" style="padding:10px 16px;flex:1;min-width:120px">
+        <div class="card-title">Totale entrate</div>
+        <div class="stat-value positive" style="font-size:18px">+${fmt(tot)}</div>
+      </div>
+      <div class="card" style="padding:10px 16px;flex:1;min-width:120px">
+        <div class="card-title">N° transazioni</div>
+        <div class="stat-value" style="font-size:18px">${txs.length}</div>
+      </div>`;
+  } else if (type === 'expense') {
+    txs   = monthTxs(cm).filter(t => t.type === 'expense');
+    title = 'Uscite — ' + ymLabel(cm, true);
+    const tot = txs.reduce((a,t)=>a+t.amount,0);
+    summaryHtml = `
+      <div class="card" style="padding:10px 16px;flex:1;min-width:120px">
+        <div class="card-title">Totale uscite</div>
+        <div class="stat-value negative" style="font-size:18px">-${fmt(tot)}</div>
+      </div>
+      <div class="card" style="padding:10px 16px;flex:1;min-width:120px">
+        <div class="card-title">N° transazioni</div>
+        <div class="stat-value" style="font-size:18px">${txs.length}</div>
+      </div>`;
+  } else if (type === 'net') {
+    txs   = monthTxs(cm);
+    title = 'Riepilogo mese — ' + ymLabel(cm, true);
+    const inc = txs.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
+    const exp = txs.filter(t=>t.type==='expense').reduce((a,t)=>a+t.amount,0);
+    const net = inc - exp;
+    summaryHtml = `
+      <div class="card" style="padding:10px 16px;flex:1;min-width:100px">
+        <div class="card-title">Entrate</div>
+        <div class="stat-value positive" style="font-size:16px">+${fmt(inc)}</div>
+      </div>
+      <div class="card" style="padding:10px 16px;flex:1;min-width:100px">
+        <div class="card-title">Uscite</div>
+        <div class="stat-value negative" style="font-size:16px">-${fmt(exp)}</div>
+      </div>
+      <div class="card" style="padding:10px 16px;flex:1;min-width:100px">
+        <div class="card-title">Risparmio</div>
+        <div class="stat-value ${net>=0?'positive':'negative'}" style="font-size:16px">${net>=0?'+':'-'}${fmt(net)}</div>
+      </div>`;
+  }
+
+  document.getElementById('stat-detail-title').textContent = title;
+  document.getElementById('stat-detail-summary').innerHTML = summaryHtml;
+
+  const tbody = document.getElementById('stat-detail-body');
+  if (!txs.length) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="icon">📭</div><p>Nessuna transazione</p></div></td></tr>`;
+  } else {
+    tbody.innerHTML = txs.map(t => `
+      <tr>
+        <td>${fmtDate(t.date)}</td>
+        <td>${escHtml(t.description)}</td>
+        <td><span class="cat-badge">${escHtml(getCatLabel(t.category))}</span></td>
+        <td><span class="badge badge-${t.type}">${t.type==='income'?'Entrata':'Uscita'}</span></td>
+        <td class="amount-${t.type}">${t.type==='income'?'+':'-'}${fmt(t.amount)}</td>
+      </tr>`).join('');
+  }
+
+  document.getElementById('modal-stat-detail').classList.add('open');
 }
 
 // ── FAB context: adapt to current page ───────────────────────
