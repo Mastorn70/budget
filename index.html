@@ -1172,6 +1172,9 @@ function openEditTransaction(id) {
   document.getElementById('tx-date').value = t.date;
   document.getElementById('tx-amount').value = t.amount;
   document.getElementById('tx-description').value = t.description;
+  document.getElementById('tx-recurring').checked = false;
+  document.getElementById('tx-rec-end').value = '';
+  document.getElementById('recurring-fields').style.display = 'none';
   populateAccountSel();
   setTransactionType(t.type);
   document.getElementById('tx-category').value = t.category;
