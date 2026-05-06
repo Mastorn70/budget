@@ -732,6 +732,7 @@
       <div class="form-group">
         <label class="form-label">Categoria</label>
         <select class="form-control" id="tx-category"></select>
+        <button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px;font-size:12px;padding:5px 10px" onclick="openCategoryModal()">⚙ Gestisci categorie</button>
       </div>
       <div class="form-group">
         <label class="form-label">Conto</label>
@@ -831,12 +832,54 @@
   </div>
 </div>
 
+<!-- Modal: Gestione categorie -->
+<div class="modal-overlay" id="modal-category">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <h3 class="modal-title">Gestione categorie</h3>
+      <button class="modal-close" onclick="closeCategoryModal()">✕</button>
+    </div>
+
+    <div class="section-title" style="font-size:14px;margin-bottom:12px">Aggiungi nuova categoria</div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Tipo</label>
+        <select class="form-control" id="cat-type">
+          <option value="income">💚 Entrata</option>
+          <option value="expense">🔴 Uscita</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Emoji icona</label>
+        <input type="text" class="form-control" id="cat-emoji" placeholder="🏋️" maxlength="2">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Nome categoria</label>
+      <input type="text" class="form-control" id="cat-name" placeholder="Es. Sport, Abbonamenti…" maxlength="60">
+    </div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:24px">
+      <button class="btn btn-primary" onclick="addCategory()">＋ Aggiungi</button>
+    </div>
+
+    <div class="section-title" style="font-size:14px;margin-bottom:8px">Categorie personalizzate</div>
+    <div id="custom-cats-list"></div>
+
+    <div style="margin-top:20px;display:flex;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeCategoryModal()">Chiudi</button>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════════════ SCRIPT ════════════════════ -->
 <script>
 'use strict';
 
 // ── Categories ──────────────────────────────────────────────
-const INCOME_CATEGORIES = [
+const DEFAULT_INCOME_CATEGORIES = [
   {id:'salary',      label:'💼 Stipendio'},
   {id:'freelance',   label:'💻 Freelance'},
   {id:'investments', label:'📈 Investimenti'},
@@ -844,7 +887,7 @@ const INCOME_CATEGORIES = [
   {id:'other-in',    label:'➕ Altro'},
 ];
 
-const EXPENSE_CATEGORIES = [
+const DEFAULT_EXPENSE_CATEGORIES = [
   {id:'food',          label:'🛒 Alimentari'},
   {id:'transport',     label:'🚗 Trasporti'},
   {id:'housing',       label:'🏠 Casa'},
@@ -857,10 +900,22 @@ const EXPENSE_CATEGORIES = [
   {id:'other-ex',      label:'➖ Altro'},
 ];
 
-const ALL_CATEGORIES = [...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES];
+function getIncomeCategories() {
+  const custom = store.get('custom_cats', []).filter(c => c.type === 'income');
+  return [...DEFAULT_INCOME_CATEGORIES, ...custom];
+}
+
+function getExpenseCategories() {
+  const custom = store.get('custom_cats', []).filter(c => c.type === 'expense');
+  return [...DEFAULT_EXPENSE_CATEGORIES, ...custom];
+}
+
+function getAllCategories() {
+  return [...getIncomeCategories(), ...getExpenseCategories()];
+}
 
 function getCatLabel(id) {
-  const c = ALL_CATEGORIES.find(c => c.id === id);
+  const c = getAllCategories().find(c => c.id === id);
   return c ? c.label : id;
 }
 
@@ -983,7 +1038,7 @@ function openModal(id) {
   }
   if (id === 'modal-budget') {
     const sel = document.getElementById('budget-category');
-    sel.innerHTML = EXPENSE_CATEGORIES.map(c=>`<option value="${c.id}">${escHtml(c.label)}</option>`).join('');
+    sel.innerHTML = getExpenseCategories().map(c=>`<option value="${c.id}">${escHtml(c.label)}</option>`).join('');
     document.getElementById('budget-limit').value = '';
   }
   if (id === 'modal-goal') {
@@ -1005,7 +1060,7 @@ document.querySelectorAll('.modal-overlay').forEach(o => {
 // ── Transaction type toggle ──────────────────────────────────
 function setTransactionType(type) {
   txType = type;
-  const cats = type==='income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const cats = type==='income' ? getIncomeCategories() : getExpenseCategories();
   document.getElementById('tx-category').innerHTML =
     cats.map(c=>`<option value="${c.id}">${escHtml(c.label)}</option>`).join('');
   document.getElementById('type-income') .classList.toggle('active', type==='income');
@@ -1067,7 +1122,7 @@ function renderTransactions() {
 
   // rebuild category options
   catSel.innerHTML = '<option value="">Tutte le categorie</option>' +
-    ALL_CATEGORIES.map(c=>`<option value="${c.id}"${c.id===savedCat?' selected':''}>${escHtml(c.label)}</option>`).join('');
+    getAllCategories().map(c=>`<option value="${c.id}"${c.id===savedCat?' selected':''}>${escHtml(c.label)}</option>`).join('');
 
   let txs = DB.transactions;
   if (ymSel.value)   txs = txs.filter(t => t.date.startsWith(ymSel.value));
@@ -1450,6 +1505,70 @@ document.querySelector('.fab').addEventListener('click', () => {
   if (page === 'goals')   { openModal('modal-goal');   return; }
   openModal('modal-transaction');
 });
+
+// ── Category management ──────────────────────────────────────
+function openCategoryModal() {
+  document.getElementById('cat-name').value  = '';
+  document.getElementById('cat-emoji').value = '';
+  document.getElementById('cat-type').value  = txType;
+  renderCategoryModal();
+  document.getElementById('modal-category').classList.add('open');
+}
+
+function closeCategoryModal() {
+  document.getElementById('modal-category').classList.remove('open');
+  // Refresh category dropdown in transaction modal if still open
+  if (document.getElementById('modal-transaction').classList.contains('open')) {
+    setTransactionType(txType);
+  }
+  // Refresh category dropdown in budget modal if still open
+  if (document.getElementById('modal-budget').classList.contains('open')) {
+    const sel = document.getElementById('budget-category');
+    sel.innerHTML = getExpenseCategories().map(c=>`<option value="${c.id}">${escHtml(c.label)}</option>`).join('');
+  }
+}
+
+function addCategory() {
+  const type  = document.getElementById('cat-type').value;
+  const emoji = document.getElementById('cat-emoji').value.trim();
+  const name  = document.getElementById('cat-name').value.trim();
+
+  if (!name) { toast('Inserisci un nome per la categoria', true); return; }
+
+  const label = emoji ? emoji + ' ' + name : name;
+  const id    = 'custom_' + Date.now();
+  const cats  = store.get('custom_cats', []);
+  cats.push({ id, type, label });
+  store.set('custom_cats', cats);
+
+  document.getElementById('cat-name').value  = '';
+  document.getElementById('cat-emoji').value = '';
+  toast('Categoria aggiunta!');
+  renderCategoryModal();
+}
+
+function deleteCustomCategory(id) {
+  const cats = store.get('custom_cats', []).filter(c => c.id !== id);
+  store.set('custom_cats', cats);
+  toast('Categoria eliminata');
+  renderCategoryModal();
+}
+
+function renderCategoryModal() {
+  const cats = store.get('custom_cats', []);
+  const container = document.getElementById('custom-cats-list');
+  if (!cats.length) {
+    container.innerHTML = '<p style="color:var(--text2);font-size:13px;padding:8px 0">Nessuna categoria personalizzata ancora.</p>';
+    return;
+  }
+  container.innerHTML = cats.map(c => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px">${escHtml(c.label)}
+        <span style="font-size:11px;color:var(--text2);margin-left:6px">(${c.type==='income'?'Entrata':'Uscita'})</span>
+      </span>
+      <button class="delete-btn" onclick="deleteCustomCategory('${escHtml(c.id)}')" title="Elimina">🗑</button>
+    </div>`).join('');
+}
 
 // ── Init ─────────────────────────────────────────────────────
 (function init() {
