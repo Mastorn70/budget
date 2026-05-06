@@ -634,6 +634,14 @@
         <div id="tx-cards-mobile"></div>
       </div>
     </div>
+
+    <!-- Voci ricorrenti -->
+    <div class="card" style="margin-top:20px" id="card-recurring-list">
+      <div class="section-header">
+        <div class="section-title">🔁 Voci ricorrenti</div>
+      </div>
+      <div id="recurring-list"><p style="color:var(--text2);font-size:13px;padding:4px 0">Nessuna voce ricorrente.</p></div>
+    </div>
   </section>
 
   <!-- ── BUDGET ── -->
@@ -746,6 +754,25 @@
       <div class="form-group">
         <label class="form-label">Conto</label>
         <select class="form-control" id="tx-account"></select>
+      </div>
+    </div>
+
+    <!-- Opzione ricorrente -->
+    <div class="form-group" style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:4px">
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;font-weight:600">
+        <input type="checkbox" id="tx-recurring" onchange="toggleRecurringFields()" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
+        🔁 Ripeti ogni mese
+      </label>
+      <div id="recurring-fields" style="display:none;margin-top:12px">
+        <div class="form-row">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Data limite (opzionale)</label>
+            <input type="date" class="form-control" id="tx-rec-end" placeholder="Nessuna scadenza">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label" style="color:var(--text2);font-weight:400;font-size:12px">La transazione verrà aggiunta automaticamente ogni mese nel giorno selezionato.</label>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -987,6 +1014,8 @@ const DB = {
   set budgets(v)     { store.set('budgets', v); },
   get goals()        { return store.get('goals',    []); },
   set goals(v)       { store.set('goals', v); },
+  get recurring()    { return store.get('recurring', []); },
+  set recurring(v)   { store.set('recurring', v); },
 };
 
 // ── Chart instances ──────────────────────────────────────────
@@ -1091,6 +1120,9 @@ function openModal(id) {
     document.getElementById('tx-date').value = new Date().toISOString().slice(0,10);
     document.getElementById('tx-amount').value = '';
     document.getElementById('tx-description').value = '';
+    document.getElementById('tx-recurring').checked = false;
+    document.getElementById('tx-rec-end').value = '';
+    document.getElementById('recurring-fields').style.display = 'none';
     populateAccountSel();
     setTransactionType(txType);
   }
@@ -1152,11 +1184,14 @@ function saveTransaction() {
   const amtRaw = parseFloat(document.getElementById('tx-amount').value);
   const desc   = document.getElementById('tx-description').value.trim();
   const cat    = document.getElementById('tx-category').value;
+  const isRecurring = document.getElementById('tx-recurring').checked;
+  const recEnd = document.getElementById('tx-rec-end').value || null;
 
   if (!date || isNaN(amtRaw) || amtRaw <= 0 || !desc) {
     toast('Compila tutti i campi obbligatori', true); return;
   }
   const amount = parseFloat(amtRaw.toFixed(2));
+  const day = parseInt(date.split('-')[2], 10);
   let txs = DB.transactions;
 
   if (editIdRaw) {
@@ -1167,8 +1202,32 @@ function saveTransaction() {
     }
     toast('Transazione modificata!');
   } else {
-    txs.push({ id: Date.now(), date, amount, description: desc, category: cat, type: txType });
-    toast('Transazione aggiunta!');
+    const txId = Date.now();
+    txs.push({ id: txId, date, amount, description: desc, category: cat, type: txType });
+
+    // Se ricorrente, salva regola
+    if (isRecurring) {
+      const rules = DB.recurring;
+      // evita duplicati con stessa descrizione+importo+giorno
+      const alreadyExists = rules.some(r => r.description === desc && r.amount === amount && r.day === day && r.type === txType);
+      if (!alreadyExists) {
+        const cm = currentYM();
+        rules.push({
+          id: Date.now() + 1,
+          type: txType,
+          day,
+          amount,
+          description: desc,
+          category: cat,
+          endDate: recEnd,
+          appliedMonths: [cm]  // considera questo mese già coperto dalla tx appena inserita
+        });
+        DB.recurring = rules;
+        toast('Transazione aggiunta come ricorrente!');
+      }
+    } else {
+      toast('Transazione aggiunta!');
+    }
   }
 
   txs.sort((a,b) => b.date.localeCompare(a.date));
@@ -1224,6 +1283,7 @@ function renderTransactions() {
     const empty = '<div class="empty-state"><div class="icon">📭</div><p>Nessuna transazione trovata</p></div>';
     tbody.innerHTML  = `<tr><td colspan="6">${empty}</td></tr>`;
     mobileEl.innerHTML = empty;
+    renderRecurringList();
     return;
   }
 
@@ -1253,6 +1313,8 @@ function renderTransactions() {
         <button class="delete-btn" onclick="deleteTransaction(${t.id})" title="Elimina">🗑</button>
       </div>
     </div>`).join('');
+
+  renderRecurringList();
 }
 
 // ── Budget ───────────────────────────────────────────────────
@@ -1744,8 +1806,103 @@ function renderCategoryModal() {
     </div>`).join('');
 }
 
+// ── Toggle recurring fields in transaction modal ────────────────
+function toggleRecurringFields() {
+  const checked = document.getElementById('tx-recurring').checked;
+  document.getElementById('recurring-fields').style.display = checked ? 'block' : 'none';
+}
+
+// ── Toggle recurring fields in transaction modal ────────────────
+function toggleRecurringFields() {
+  const checked = document.getElementById('tx-recurring').checked;
+  document.getElementById('recurring-fields').style.display = checked ? 'block' : 'none';
+}
+
+// ── Recurring transactions ───────────────────────────────────
+let recType = 'expense';
+
+function setRecurringType(type) {
+  recType = type;
+}
+
+function openModal_recurring() {}
+
+function addRecurringRule() {}
+
+function deleteRecurringRule(id) {
+  DB.recurring = DB.recurring.filter(r => r.id !== id);
+  toast('Voce ricorrente eliminata');
+  renderRecurringList();
+}
+
+function renderRecurringList() {
+  const rules = DB.recurring;
+  const container = document.getElementById('recurring-list');
+  if (!container) return;
+  if (!rules.length) {
+    container.innerHTML = '<p style="color:var(--text2);font-size:13px;padding:4px 0">Nessuna voce ricorrente.</p>';
+    return;
+  }
+  container.innerHTML = rules.map(r => {
+    const endLabel = r.endDate ? ` &middot; fino al ${fmtDate(r.endDate)}` : '';
+    return `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-size:14px;font-weight:600">${escHtml(r.description)}
+          <span class="badge badge-${r.type}" style="margin-left:6px">${r.type==='income'?'Entrata':'Uscita'}</span>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">
+          ${escHtml(getCatLabel(r.category))} &middot; ogni mese il giorno <strong>${r.day}</strong>${endLabel} &middot; <span class="amount-${r.type}">${r.type==='income'?'+':'-'}${fmt(r.amount)}</span>
+        </div>
+      </div>
+      <button class="delete-btn" onclick="deleteRecurringRule(${r.id})" title="Elimina">🗑</button>
+    </div>`;
+  }).join('');
+}
+
+function applyRecurring() {
+  const rules = DB.recurring;
+  if (!rules.length) return;
+
+  const cm  = currentYM();
+  const today = new Date();
+  const todayDay = today.getDate();
+  let changed = false;
+
+  rules.forEach(r => {
+    if (!r.appliedMonths) r.appliedMonths = [];
+    if (r.appliedMonths.includes(cm)) return;
+    if (r.day > todayDay) return;
+    // Controlla data limite
+    if (r.endDate && cm > r.endDate.slice(0, 7)) return;
+
+    const dateStr = cm + '-' + String(r.day).padStart(2, '0');
+    const txs = DB.transactions;
+    txs.push({
+      id: Date.now() + Math.random(),
+      date: dateStr,
+      amount: r.amount,
+      description: r.description,
+      category: r.category,
+      type: r.type,
+      recurringId: r.id
+    });
+    txs.sort((a, b) => b.date.localeCompare(a.date));
+    DB.transactions = txs;
+
+    r.appliedMonths.push(cm);
+    changed = true;
+  });
+
+  if (changed) {
+    DB.recurring = rules;
+    updateSidebarBalance();
+  }
+}
+
 // ── Init ─────────────────────────────────────────────────────
 (function init() {
+  applyRecurring();
   updateSidebarBalance();
   renderDashboard();
 })();
