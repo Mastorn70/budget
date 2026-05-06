@@ -462,6 +462,9 @@
 
       /* Delete button bigger touch target */
       .delete-btn { padding: 8px 10px; font-size: 18px; }
+      .edit-btn   { padding: 8px 10px; font-size: 18px; }
+      /* Mobile tx card: amount on left meta line, actions always visible */
+      .tx-card-right { gap: 4px; }
     }
   </style>
 </head>
@@ -1240,10 +1243,9 @@ function renderTransactions() {
     <div class="tx-card">
       <div class="tx-card-left">
         <div class="tx-card-desc">${escHtml(t.description)}</div>
-        <div class="tx-card-meta">${escHtml(getCatLabel(t.category))} &middot; ${fmtDate(t.date)}</div>
+        <div class="tx-card-meta">${escHtml(getCatLabel(t.category))} &middot; ${fmtDate(t.date)} &middot; <span class="amount-${t.type}">${t.type==='income'?'+':'-'}${fmt(t.amount)}</span></div>
       </div>
       <div class="tx-card-right">
-        <span class="amount-${t.type}">${t.type==='income'?'+':'-'}${fmt(t.amount)}</span>
         <button class="edit-btn" onclick="openEditTransaction(${t.id})" title="Modifica">✏️</button>
         <button class="delete-btn" onclick="deleteTransaction(${t.id})" title="Elimina">🗑</button>
       </div>
