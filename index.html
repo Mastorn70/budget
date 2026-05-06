@@ -697,9 +697,16 @@
       </div>
     </div>
 
-    <div class="card">
-      <div class="section-title" style="margin-bottom:16px">Andamento saldo (ultimi 6 mesi)</div>
+    <div class="card" style="margin-bottom:24px">
+      <div class="section-title" style="margin-bottom:4px">Andamento saldo (ultimi 6 mesi)</div>
       <div class="chart-container" style="height:220px"><canvas id="chart-line"></canvas></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title" style="margin-bottom:4px">🔁 Proiezione spese ricorrenti (prossimi 6 mesi)</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:16px">Stima basata sulle voci ricorrenti attive</p>
+      <div class="chart-container" style="height:260px"><canvas id="chart-forecast"></canvas></div>
+      <div id="forecast-empty" style="display:none" class="empty-state"><div class="icon">🔁</div><p>Nessuna voce ricorrente configurata</p></div>
     </div>
   </section>
 
@@ -1019,7 +1026,7 @@ const DB = {
 };
 
 // ── Chart instances ──────────────────────────────────────────
-let chartDonut = null, chartBar = null, chartPie = null, chartLine = null;
+let chartDonut = null, chartBar = null, chartPie = null, chartLine = null, chartForecast = null;
 
 // ── Current transaction type toggle ─────────────────────────
 let txType = 'income';
@@ -1611,6 +1618,73 @@ function renderReports() {
     }]},
     options: { responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ labels:{color:'#94a3b8'} } }, scales: gridOpts }
+  });
+
+  renderRecurringForecast();
+}
+
+// ── Recurring forecast chart ──────────────────────────────────
+function renderRecurringForecast() {
+  const rules = DB.recurring;
+  const emptyEl   = document.getElementById('forecast-empty');
+  const canvasEl  = document.getElementById('chart-forecast');
+
+  if (chartForecast) { chartForecast.destroy(); chartForecast = null; }
+
+  if (!rules.length) {
+    canvasEl.style.display = 'none';
+    emptyEl.style.display  = 'block';
+    return;
+  }
+  canvasEl.style.display = 'block';
+  emptyEl.style.display  = 'none';
+
+  // Prossimi 6 mesi (mese corrente incluso)
+  const futureMonths = [];
+  const now = new Date();
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    futureMonths.push(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'));
+  }
+  const labels = futureMonths.map(m => ymLabel(m, false));
+
+  // Per ogni mese calcola entrate e uscite ricorrenti previste
+  const forecastIncome  = futureMonths.map(m => {
+    return rules
+      .filter(r => r.type === 'income' && (!r.endDate || m <= r.endDate.slice(0,7)))
+      .reduce((a, r) => a + r.amount, 0);
+  });
+  const forecastExpense = futureMonths.map(m => {
+    return rules
+      .filter(r => r.type === 'expense' && (!r.endDate || m <= r.endDate.slice(0,7)))
+      .reduce((a, r) => a + r.amount, 0);
+  });
+  const forecastNet = futureMonths.map((_, i) => parseFloat((forecastIncome[i] - forecastExpense[i]).toFixed(2)));
+
+  const gridOpts = {
+    x: { ticks:{color:'#94a3b8'}, grid:{color:'#334155'} },
+    y: { ticks:{color:'#94a3b8', callback: v=>'\u20ac'+v}, grid:{color:'#334155'} }
+  };
+
+  chartForecast = new Chart(canvasEl.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label:'Entrate ricorrenti',  data: forecastIncome,  backgroundColor:'rgba(34,197,94,.7)',  borderRadius:6 },
+        { label:'Uscite ricorrenti',   data: forecastExpense, backgroundColor:'rgba(239,68,68,.7)',   borderRadius:6 },
+        { label:'Saldo netto',         data: forecastNet,
+          type:'line', borderColor:'#6366f1', backgroundColor:'rgba(99,102,241,.15)',
+          fill:true, tension:.4, pointBackgroundColor:'#6366f1', pointRadius:5, yAxisID:'y' }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color:'#94a3b8' } },
+        tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': \u20ac' + ctx.parsed.y.toLocaleString('it-IT',{minimumFractionDigits:2}) } }
+      },
+      scales: gridOpts
+    }
   });
 }
 
