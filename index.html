@@ -766,15 +766,18 @@
 
     <!-- Opzione ricorrente -->
     <div class="form-group" style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:4px">
-      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;font-weight:600">
-        <input type="checkbox" id="tx-recurring" onchange="toggleRecurringFields()" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
-        🔁 Ripeti ogni mese
-      </label>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0">
+        <span style="font-size:14px;font-weight:600">🔁 Ripeti ogni mese</span>
+        <button type="button" id="btn-recurring-toggle" onclick="setTxRecurring(!txRecurring)"
+          style="min-width:52px;padding:5px 14px;border-radius:999px;border:2px solid var(--border);background:var(--bg);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;transition:all .2s">
+          NO
+        </button>
+      </div>
       <div id="recurring-fields" style="display:none;margin-top:12px">
         <div class="form-row">
           <div class="form-group" style="margin-bottom:0">
             <label class="form-label">Data limite (opzionale)</label>
-            <input type="date" class="form-control" id="tx-rec-end" placeholder="Nessuna scadenza">
+            <input type="date" class="form-control" id="tx-rec-end">
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label class="form-label" style="color:var(--text2);font-weight:400;font-size:12px">La transazione verrà aggiunta automaticamente ogni mese nel giorno selezionato.</label>
@@ -1127,9 +1130,14 @@ function openModal(id) {
     document.getElementById('tx-date').value = new Date().toISOString().slice(0,10);
     document.getElementById('tx-amount').value = '';
     document.getElementById('tx-description').value = '';
-    document.getElementById('tx-recurring').checked = false;
     document.getElementById('tx-rec-end').value = '';
     document.getElementById('recurring-fields').style.display = 'none';
+    txRecurring = false;
+    const btn = document.getElementById('btn-recurring-toggle');
+    btn.textContent = 'NO';
+    btn.style.borderColor = 'var(--border)';
+    btn.style.color = 'var(--text2)';
+    btn.style.background = 'var(--bg)';
     populateAccountSel();
     setTransactionType(txType);
   }
@@ -1179,9 +1187,14 @@ function openEditTransaction(id) {
   document.getElementById('tx-date').value = t.date;
   document.getElementById('tx-amount').value = t.amount;
   document.getElementById('tx-description').value = t.description;
-  document.getElementById('tx-recurring').checked = false;
-  document.getElementById('tx-rec-end').value = '';
-  document.getElementById('recurring-fields').style.display = 'none';
+  // Controlla se esiste una regola ricorrente associata
+  const rules = DB.recurring;
+  const isRec = !!(t.isRecurring || t.recurringId);
+  const matchedRule = t.recurringId ? rules.find(r => r.id === t.recurringId) : null;
+
+  document.getElementById('tx-rec-end').value = matchedRule ? (matchedRule.endDate || '') : '';
+  setTxRecurring(isRec);
+
   populateAccountSel();
   setTransactionType(t.type);
   document.getElementById('tx-category').value = t.category;
@@ -1194,7 +1207,7 @@ function saveTransaction() {
   const amtRaw = parseFloat(document.getElementById('tx-amount').value);
   const desc   = document.getElementById('tx-description').value.trim();
   const cat    = document.getElementById('tx-category').value;
-  const isRecurring = document.getElementById('tx-recurring').checked;
+  const isRecurring = txRecurring;
   const recEnd = document.getElementById('tx-rec-end').value || null;
 
   if (!date || isNaN(amtRaw) || amtRaw <= 0 || !desc) {
@@ -1213,28 +1226,26 @@ function saveTransaction() {
     toast('Transazione modificata!');
   } else {
     const txId = Date.now();
-    txs.push({ id: txId, date, amount, description: desc, category: cat, type: txType });
+    const recurringId = isRecurring ? txId + 1 : null;
+    txs.push({ id: txId, date, amount, description: desc, category: cat, type: txType,
+                ...(recurringId ? { recurringId, isRecurring: true } : {}) });
 
     // Se ricorrente, salva regola
     if (isRecurring) {
       const rules = DB.recurring;
-      // evita duplicati con stessa descrizione+importo+giorno
-      const alreadyExists = rules.some(r => r.description === desc && r.amount === amount && r.day === day && r.type === txType);
-      if (!alreadyExists) {
-        const cm = currentYM();
-        rules.push({
-          id: Date.now() + 1,
-          type: txType,
-          day,
-          amount,
-          description: desc,
-          category: cat,
-          endDate: recEnd,
-          appliedMonths: [cm]  // considera questo mese già coperto dalla tx appena inserita
-        });
-        DB.recurring = rules;
-        toast('Transazione aggiunta come ricorrente!');
-      }
+      const cm = currentYM();
+      rules.push({
+        id: recurringId,
+        type: txType,
+        day,
+        amount,
+        description: desc,
+        category: cat,
+        endDate: recEnd,
+        appliedMonths: [cm]
+      });
+      DB.recurring = rules;
+      toast('Transazione aggiunta come ricorrente!');
     } else {
       toast('Transazione aggiunta!');
     }
@@ -1245,6 +1256,7 @@ function saveTransaction() {
 
   closeModal('modal-transaction');
   updateSidebarBalance();
+  renderRecurringList();
   if (document.getElementById('page-dashboard').classList.contains('active'))    renderDashboard();
   if (document.getElementById('page-transactions').classList.contains('active')) renderTransactions();
 }
@@ -1884,15 +1896,23 @@ function renderCategoryModal() {
 }
 
 // ── Toggle recurring fields in transaction modal ────────────────
-function toggleRecurringFields() {
-  const checked = document.getElementById('tx-recurring').checked;
-  document.getElementById('recurring-fields').style.display = checked ? 'block' : 'none';
-}
+let txRecurring = false;
 
-// ── Toggle recurring fields in transaction modal ────────────────
-function toggleRecurringFields() {
-  const checked = document.getElementById('tx-recurring').checked;
-  document.getElementById('recurring-fields').style.display = checked ? 'block' : 'none';
+function setTxRecurring(val) {
+  txRecurring = !!val;
+  const btn = document.getElementById('btn-recurring-toggle');
+  document.getElementById('recurring-fields').style.display = txRecurring ? 'block' : 'none';
+  if (txRecurring) {
+    btn.textContent = 'SÌ';
+    btn.style.borderColor = 'var(--primary)';
+    btn.style.color = 'var(--primary-light)';
+    btn.style.background = 'rgba(99,102,241,.15)';
+  } else {
+    btn.textContent = 'NO';
+    btn.style.borderColor = 'var(--border)';
+    btn.style.color = 'var(--text2)';
+    btn.style.background = 'var(--bg)';
+  }
 }
 
 // ── Recurring transactions ───────────────────────────────────
