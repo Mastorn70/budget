@@ -1221,7 +1221,41 @@ function saveTransaction() {
     const editId = parseInt(editIdRaw, 10);
     const idx = txs.findIndex(t => t.id === editId);
     if (idx >= 0) {
-      txs[idx] = { ...txs[idx], date, amount, description: desc, category: cat, type: txType };
+      const existing = txs[idx];
+      const existingRecurringId = existing.recurringId || null;
+      let newRecurringId = existingRecurringId;
+
+      let rules = DB.recurring;
+
+      if (isRecurring) {
+        if (existingRecurringId) {
+          // Aggiorna la regola esistente
+          const rIdx = rules.findIndex(r => r.id === existingRecurringId);
+          if (rIdx >= 0) {
+            rules[rIdx] = { ...rules[rIdx], type: txType, day, amount, description: desc, category: cat, endDate: recEnd };
+          } else {
+            // Regola non trovata, la ricrea
+            const cm = currentYM();
+            newRecurringId = Date.now() + 1;
+            rules.push({ id: newRecurringId, type: txType, day, amount, description: desc, category: cat, endDate: recEnd, appliedMonths: [cm] });
+          }
+        } else {
+          // Nuova regola ricorrente
+          const cm = currentYM();
+          newRecurringId = Date.now() + 1;
+          rules.push({ id: newRecurringId, type: txType, day, amount, description: desc, category: cat, endDate: recEnd, appliedMonths: [cm] });
+        }
+        DB.recurring = rules;
+      } else {
+        // Toggle su NO: rimuovi la regola se esiste
+        if (existingRecurringId) {
+          DB.recurring = rules.filter(r => r.id !== existingRecurringId);
+        }
+        newRecurringId = null;
+      }
+
+      txs[idx] = { ...existing, date, amount, description: desc, category: cat, type: txType,
+        ...(newRecurringId ? { recurringId: newRecurringId, isRecurring: true } : { recurringId: undefined, isRecurring: false }) };
     }
     toast('Transazione modificata!');
   } else {
@@ -1928,6 +1962,17 @@ function addRecurringRule() {}
 
 function deleteRecurringRule(id) {
   DB.recurring = DB.recurring.filter(r => r.id !== id);
+  // Rimuovi i flag ricorrenti da tutte le transazioni collegate
+  const txs = DB.transactions.map(t => {
+    if (t.recurringId === id) {
+      const copy = { ...t };
+      delete copy.recurringId;
+      copy.isRecurring = false;
+      return copy;
+    }
+    return t;
+  });
+  DB.transactions = txs;
   toast('Voce ricorrente eliminata');
   renderRecurringList();
 }
